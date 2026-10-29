@@ -1,0 +1,998 @@
+// AstroVeda database schema.
+// Revenue streams: one-time report purchases, subscriptions, and commission on
+// consultations (Razorpay). Report access always flows through ReportAccessGrant.
+// Portable: runs on SQLite locally and PostgreSQL in production (no list columns,
+// no provider-specific queries). prisma/sqlite/schema.prisma is generated from this file.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────
+
+enum Role {
+  USER
+  ASTROLOGER
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  DELETION_REQUESTED
+}
+
+enum Language {
+  EN
+  HI
+}
+
+enum Ayanamsha {
+  LAHIRI
+  RAMAN
+  KRISHNAMURTI
+}
+
+enum NodeType {
+  TRUE_NODE
+  MEAN_NODE
+}
+
+enum BirthTimeAccuracy {
+  EXACT
+  APPROXIMATE
+  UNKNOWN
+}
+
+enum Planet {
+  SUN
+  MOON
+  MARS
+  MERCURY
+  JUPITER
+  VENUS
+  SATURN
+  RAHU
+  KETU
+}
+
+enum DashaLevel {
+  MAHADASHA
+  ANTARDASHA
+}
+
+enum InterpretationSection {
+  PERSONALITY
+  CAREER_EDUCATION
+  RELATIONSHIPS
+  SPIRITUAL
+  STRENGTHS_CHALLENGES
+  DASHA
+  TRANSITS
+}
+
+enum InterpretationSource {
+  RULE_BASED
+  AI_GENERATED
+}
+
+enum HoroscopePeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ToolType {
+  KUNDLI
+  MATCHING
+  HOROSCOPE
+  PANCHANG
+  NUMEROLOGY
+  NAKSHATRA
+  RASHI
+  TRANSIT
+}
+
+enum ReportStatus {
+  REQUESTED
+  QUEUED
+  GENERATING
+  READY
+  FAILED
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum AccessGrantSource {
+  ADMIN_GRANT
+  DEVELOPMENT
+  PURCHASE
+  SUBSCRIPTION
+}
+
+enum PaymentPurpose {
+  REPORT
+  CONSULTATION
+  SUBSCRIPTION
+}
+
+enum OrderStatus {
+  CREATED
+  ATTEMPTED
+  PAID
+  FAILED
+  EXPIRED
+}
+
+enum PaymentStatus {
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum RefundStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  CREATED
+  AUTHENTICATED
+  ACTIVE
+  PENDING
+  HALTED
+  CANCELLED
+  COMPLETED
+  EXPIRED
+}
+
+enum PayoutStatus {
+  PENDING
+  ON_HOLD
+  PAID
+}
+
+enum SlotStatus {
+  OPEN
+  BLOCKED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  CANCELLED
+  RESCHEDULE_REQUESTED
+  COMPLETED
+}
+
+enum ContactStatus {
+  NEW
+  IN_PROGRESS
+  RESOLVED
+  SPAM
+}
+
+// ─────────────────────────────────────────────────────────────
+// Authentication & users
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id                  String        @id @default(cuid())
+  email               String        @unique
+  name                String
+  passwordHash        String?
+  emailVerifiedAt     DateTime?
+  role                Role          @default(USER)
+  status              AccountStatus @default(ACTIVE)
+  preferredLanguage   Language      @default(EN)
+  timezone            String        @default("Asia/Kolkata")
+  imageUrl            String?
+  deletionRequestedAt DateTime?
+  lastLoginAt         DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  oauthAccounts       OAuthAccount[]
+  sessions            RefreshSession[]
+  verificationTokens  VerificationToken[]
+  passwordResetTokens PasswordResetToken[]
+  birthProfiles       BirthProfile[]
+  savedCharts         SavedChart[]
+  reports             Report[]
+  accessGrants        ReportAccessGrant[]  @relation("GrantRecipient")
+  grantsIssued        ReportAccessGrant[]  @relation("GrantIssuer")
+  astrologerProfile   Astrologer?
+  bookings            Booking[]            @relation("BookingCustomer")
+  bookingDecisions    Booking[]            @relation("BookingDecider")
+  reviews             ConsultationReview[]
+  notifications       Notification[]
+  contactResponses    ContactMessage[]
+  horoscopesAuthored  HoroscopeContent[]
+  auditLogs           AuditLog[]
+  toolUsages          ToolUsage[]
+  paymentOrders       PaymentOrder[]
+  refundsInitiated    Refund[]
+  subscriptions       Subscription[]
+
+  @@index([role])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OAuthAccount {
+  id                String   @id @default(cuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  createdAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+// Refresh tokens are stored hashed; rotation revokes the previous session row.
+model RefreshSession {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique
+  userAgent  String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model VerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Birth profiles & astrology
+// ─────────────────────────────────────────────────────────────
+
+model BirthProfile {
+  id                String            @id @default(cuid())
+  userId            String
+  name              String
+  dateOfBirth       DateTime          @db.Date
+  // Local wall-clock time at the birthplace, "HH:mm" or "HH:mm:ss"
+  birthTime         String
+  birthTimeAccuracy BirthTimeAccuracy @default(EXACT)
+  placeName         String
+  latitude          Decimal           @db.Decimal(9, 6)
+  longitude         Decimal           @db.Decimal(9, 6)
+  // IANA timezone, e.g. "Asia/Kolkata"
+  timezone          String
+  ayanamsha         Ayanamsha         @default(LAHIRI)
+  notes             String?
+  isPrimary         Boolean           @default(false)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  charts           ChartCalculation[]
+  reports          Report[]           @relation("ReportSubject")
+  partnerReports   Report[]           @relation("ReportPartner")
+  bookings         Booking[]
+
+  @@index([userId])
+}
+
+// One immutable calculation snapshot. Metadata is stored so the result can be reproduced.
+model ChartCalculation {
+  id              String    @id @default(cuid())
+  birthProfileId  String
+  // Hash of the inputs + settings; identical inputs reuse the existing calculation
+  inputHash       String
+  ayanamsha       Ayanamsha
+  ayanamshaValue  Float
+  nodeType        NodeType  @default(TRUE_NODE)
+  houseSystem     String    @default("WHOLE_SIGN")
+  ephemerisSource String
+  engineVersion   String
+  utcDateTime     DateTime
+  julianDayUt     Float
+  ascendant       Float
+  // Derived data that is read whole: D1/D9 layouts, aspects, summary
+  details         Json
+  createdAt       DateTime  @default(now())
+
+  birthProfile    BirthProfile          @relation(fields: [birthProfileId], references: [id], onDelete: Cascade)
+  planets         PlanetaryPosition[]
+  houses          HousePosition[]
+  dashas          DashaPeriod[]
+  interpretations ChartInterpretation[]
+  savedBy         SavedChart[]
+  reports         Report[]
+
+  @@unique([birthProfileId, inputHash])
+  @@index([birthProfileId, createdAt])
+}
+
+model PlanetaryPosition {
+  id            String  @id @default(cuid())
+  chartId       String
+  planet        Planet
+  // Sidereal ecliptic longitude, 0 ≤ x < 360
+  longitude     Float
+  latitude      Float
+  speed         Float
+  isRetrograde  Boolean
+  sign          Int
+  degreeInSign  Float
+  house         Int
+  nakshatra     Int
+  pada          Int
+  navamshaSign  Int
+
+  chart ChartCalculation @relation(fields: [chartId], references: [id], onDelete: Cascade)
+
+  @@unique([chartId, planet])
+}
+
+model HousePosition {
+  id            String @id @default(cuid())
+  chartId       String
+  house         Int
+  sign          Int
+  cuspLongitude Float
+
+  chart ChartCalculation @relation(fields: [chartId], references: [id], onDelete: Cascade)
+
+  @@unique([chartId, house])
+}
+
+model DashaPeriod {
+  id        String     @id @default(cuid())
+  chartId   String
+  level     DashaLevel
+  planet    Planet
+  // Mahadasha lord for ANTARDASHA rows
+  parentPlanet Planet?
+  startsAt  DateTime
+  endsAt    DateTime
+
+  chart ChartCalculation @relation(fields: [chartId], references: [id], onDelete: Cascade)
+
+  @@index([chartId, level, startsAt])
+}
+
+// Cached geocentric sidereal positions for a moment; shared across users.
+model TransitCalculation {
+  id             String    @id @default(cuid())
+  moment         DateTime
+  ayanamsha      Ayanamsha
+  engineVersion  String
+  positions      Json
+  createdAt      DateTime  @default(now())
+
+  @@unique([moment, ayanamsha, engineVersion])
+}
+
+model SavedChart {
+  id        String   @id @default(cuid())
+  userId    String
+  chartId   String
+  label     String?
+  createdAt DateTime @default(now())
+
+  user  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chart ChartCalculation @relation(fields: [chartId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, chartId])
+}
+
+model ChartInterpretation {
+  id        String                @id @default(cuid())
+  chartId   String
+  section   InterpretationSection
+  language  Language              @default(EN)
+  source    InterpretationSource
+  model     String?
+  content   Json
+  createdAt DateTime              @default(now())
+
+  chart ChartCalculation @relation(fields: [chartId], references: [id], onDelete: Cascade)
+
+  @@unique([chartId, section, language, source])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Free tools & editorial content
+// ─────────────────────────────────────────────────────────────
+
+// Admin-authored horoscope text (daily, weekly and monthly); never randomly generated.
+model HoroscopeContent {
+  id          String          @id @default(cuid())
+  sign        Int
+  period      HoroscopePeriod
+  periodStart DateTime        @db.Date
+  language    Language        @default(EN)
+  content     String
+  status      ContentStatus   @default(DRAFT)
+  authorId    String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  author User? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@unique([sign, period, periodStart, language])
+  @@index([period, periodStart, status])
+}
+
+model PanchangEntry {
+  id            String   @id @default(cuid())
+  date          DateTime @db.Date
+  // Rounded to 2 decimals (~1 km) so nearby lookups share a cache row
+  latitude      Decimal  @db.Decimal(5, 2)
+  longitude     Decimal  @db.Decimal(5, 2)
+  timezone      String
+  engineVersion String
+  data          Json
+  createdAt     DateTime @default(now())
+
+  @@unique([date, latitude, longitude, timezone, engineVersion])
+}
+
+// Anonymous-friendly usage counter; never stores tool inputs (birth data).
+model ToolUsage {
+  id        String   @id @default(cuid())
+  tool      ToolType
+  userId    String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tool, createdAt])
+}
+
+model FaqItem {
+  id          String        @id @default(cuid())
+  category    String
+  question    String
+  answer      String
+  language    Language      @default(EN)
+  sortOrder   Int           @default(0)
+  status      ContentStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([category, language, status])
+}
+
+model Banner {
+  id        String        @id @default(cuid())
+  title     String
+  body      String?
+  linkUrl   String?
+  language  Language      @default(EN)
+  status    ContentStatus @default(DRAFT)
+  startsAt  DateTime?
+  endsAt    DateTime?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model Article {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  title       String
+  excerpt     String?
+  body        String
+  language    Language      @default(EN)
+  status      ContentStatus @default(DRAFT)
+  publishedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([status, publishedAt])
+}
+
+model SeoMetadata {
+  id          String   @id @default(cuid())
+  path        String   @unique
+  title       String
+  description String
+  ogImageUrl  String?
+  updatedAt   DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────
+// Reports
+// ─────────────────────────────────────────────────────────────
+
+model ReportTemplate {
+  id        String   @id @default(cuid())
+  key       String
+  version   Int
+  name      String
+  sections  Json
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products ReportProduct[]
+
+  @@unique([key, version])
+}
+
+model ReportProduct {
+  id                     String   @id @default(cuid())
+  slug                   String   @unique
+  title                  String
+  description            String
+  // JSON array of strings (portable across SQLite and PostgreSQL)
+  contents               Json
+  // Price in minor units (paise) charged at checkout; null = not sold online
+  indicativePriceMinor   Int?
+  currency               String   @default("INR")
+  requiresPartnerProfile Boolean  @default(false)
+  isActive               Boolean  @default(true)
+  sortOrder              Int      @default(0)
+  templateId             String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  template      ReportTemplate?     @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  reports       Report[]
+  accessGrants  ReportAccessGrant[]
+  paymentOrders PaymentOrder[]
+}
+
+model Report {
+  id               String       @id @default(cuid())
+  userId           String
+  productId        String
+  birthProfileId   String
+  partnerProfileId String?
+  chartId          String?
+  accessGrantId    String?
+  status           ReportStatus @default(REQUESTED)
+  language         Language     @default(EN)
+  // Path inside private storage; never a public URL
+  storagePath      String?
+  errorMessage     String?
+  generatedAt      DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product        ReportProduct      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  birthProfile   BirthProfile       @relation("ReportSubject", fields: [birthProfileId], references: [id], onDelete: Cascade)
+  partnerProfile BirthProfile?      @relation("ReportPartner", fields: [partnerProfileId], references: [id], onDelete: SetNull)
+  chart          ChartCalculation?  @relation(fields: [chartId], references: [id], onDelete: SetNull)
+  accessGrant    ReportAccessGrant? @relation(fields: [accessGrantId], references: [id], onDelete: SetNull)
+  jobs           ReportGenerationJob[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+model ReportGenerationJob {
+  id         String    @id @default(cuid())
+  reportId   String
+  status     JobStatus @default(PENDING)
+  attempt    Int       @default(1)
+  lastError  String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+}
+
+// Explicit entitlement to request a report: admin grant, paid order or active subscription.
+model ReportAccessGrant {
+  id             String            @id @default(cuid())
+  userId         String
+  // null = valid for any report (subscription credits)
+  productId      String?
+  source         AccessGrantSource
+  reason         String?
+  grantedById    String?
+  orderId        String?           @unique
+  subscriptionId String?
+  // Billing period a subscription credit grant belongs to (one grant per period)
+  periodStart    DateTime?
+  usesRemaining  Int?
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime          @default(now())
+
+  user         User           @relation("GrantRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy    User?          @relation("GrantIssuer", fields: [grantedById], references: [id], onDelete: SetNull)
+  product      ReportProduct? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  order        PaymentOrder?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  subscription Subscription?  @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  reports      Report[]
+
+  @@unique([subscriptionId, periodStart])
+  @@index([userId, productId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Consultations
+// ─────────────────────────────────────────────────────────────
+
+model Astrologer {
+  id                    String    @id @default(cuid())
+  userId                String?   @unique
+  slug                  String    @unique
+  displayName           String
+  photoUrl              String?
+  bio                   String
+  // JSON array of Language values ("EN" | "HI")
+  languages             Json
+  // Only shown publicly once an admin has verified them
+  qualifications        Json
+  experienceYears       Int?
+  credentialsVerifiedAt DateTime?
+  consultationMinutes   Int       @default(30)
+  // Consultation fee in minor units (paise)
+  feeMinor              Int?
+  currency              String    @default("INR")
+  // Platform commission in basis points (2000 = 20%); null uses the AdminSetting default
+  commissionRateBps     Int?
+  isActive              Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user            User?                      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  specializations AstrologerSpecialization[]
+  slots           AvailabilitySlot[]
+  bookings        Booking[]
+  reviews         ConsultationReview[]
+  earnings        AstrologerEarning[]
+
+  @@index([isActive])
+}
+
+model Specialization {
+  id          String @id @default(cuid())
+  slug        String @unique
+  name        String
+
+  astrologers AstrologerSpecialization[]
+}
+
+model AstrologerSpecialization {
+  astrologerId     String
+  specializationId String
+
+  astrologer     Astrologer     @relation(fields: [astrologerId], references: [id], onDelete: Cascade)
+  specialization Specialization @relation(fields: [specializationId], references: [id], onDelete: Cascade)
+
+  @@id([astrologerId, specializationId])
+}
+
+model AvailabilitySlot {
+  id           String     @id @default(cuid())
+  astrologerId String
+  startsAt     DateTime
+  endsAt       DateTime
+  status       SlotStatus @default(OPEN)
+  createdAt    DateTime   @default(now())
+
+  astrologer Astrologer @relation(fields: [astrologerId], references: [id], onDelete: Cascade)
+  bookings   Booking[]
+
+  @@unique([astrologerId, startsAt])
+  @@index([astrologerId, startsAt, status])
+}
+
+// A partial unique index (see migration) allows at most one active
+// (PENDING / CONFIRMED / RESCHEDULE_REQUESTED) booking per slot.
+model Booking {
+  id                 String        @id @default(cuid())
+  userId             String
+  astrologerId       String
+  slotId             String
+  birthProfileId     String?
+  status             BookingStatus @default(PENDING)
+  startsAt           DateTime
+  endsAt             DateTime
+  userNotes          String?
+  astrologerNotes    String?
+  meetingLink        String?
+  cancellationReason String?
+  decidedById        String?
+  decidedAt          DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  user         User                @relation("BookingCustomer", fields: [userId], references: [id], onDelete: Cascade)
+  astrologer   Astrologer          @relation(fields: [astrologerId], references: [id], onDelete: Restrict)
+  slot         AvailabilitySlot    @relation(fields: [slotId], references: [id], onDelete: Restrict)
+  birthProfile BirthProfile?       @relation(fields: [birthProfileId], references: [id], onDelete: SetNull)
+  decidedBy    User?               @relation("BookingDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  review       ConsultationReview?
+  paymentOrder PaymentOrder?
+  earning      AstrologerEarning?
+
+  @@index([userId, startsAt])
+  @@index([astrologerId, startsAt])
+  @@index([status])
+}
+
+// Reviews can only exist for a completed booking, so ratings are genuine.
+model ConsultationReview {
+  id           String   @id @default(cuid())
+  bookingId    String   @unique
+  userId       String
+  astrologerId String
+  rating       Int
+  comment      String?
+  isPublished  Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  booking    Booking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  astrologer Astrologer @relation(fields: [astrologerId], references: [id], onDelete: Cascade)
+
+  @@index([astrologerId, isPublished])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Payments (Razorpay) — amounts are always integer minor units (paise)
+// ─────────────────────────────────────────────────────────────
+
+// Created server-side before checkout; the amount is never taken from the client.
+model PaymentOrder {
+  id               String         @id @default(cuid())
+  userId           String
+  purpose          PaymentPurpose
+  amountMinor      Int
+  currency         String         @default("INR")
+  status           OrderStatus    @default(CREATED)
+  // Our idempotent receipt reference sent to Razorpay
+  receipt          String         @unique
+  razorpayOrderId  String?        @unique
+  reportProductId  String?
+  bookingId        String?        @unique
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  user          User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  reportProduct ReportProduct?     @relation(fields: [reportProductId], references: [id], onDelete: SetNull)
+  booking       Booking?           @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  payments      Payment[]
+  accessGrant   ReportAccessGrant?
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+// A payment row is only written after signature verification or a verified webhook.
+model Payment {
+  id                String        @id @default(cuid())
+  orderId           String
+  razorpayPaymentId String        @unique
+  status            PaymentStatus
+  amountMinor       Int
+  method            String?
+  failureReason     String?
+  capturedAt        DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  order   PaymentOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  refunds Refund[]
+
+  @@index([orderId])
+}
+
+model Refund {
+  id               String       @id @default(cuid())
+  paymentId        String
+  razorpayRefundId String?      @unique
+  amountMinor      Int
+  status           RefundStatus @default(PENDING)
+  reason           String?
+  initiatedById    String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  payment     Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  initiatedBy User?   @relation(fields: [initiatedById], references: [id], onDelete: SetNull)
+
+  @@index([paymentId])
+}
+
+// Every webhook is recorded once by its event id, which makes processing idempotent.
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  provider    String
+  eventId     String
+  eventType   String
+  payload     Json
+  processedAt DateTime?
+  error       String?
+  createdAt   DateTime  @default(now())
+
+  @@unique([provider, eventId])
+  @@index([eventType, createdAt])
+}
+
+model SubscriptionPlan {
+  id                 String          @id @default(cuid())
+  slug               String          @unique
+  name               String
+  description        String
+  features           Json
+  amountMinor        Int
+  currency           String          @default("INR")
+  interval           BillingInterval
+  // Report credits granted per billing cycle
+  reportCredits      Int             @default(0)
+  razorpayPlanId     String?         @unique
+  isActive           Boolean         @default(true)
+  sortOrder          Int             @default(0)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id                     String             @id @default(cuid())
+  userId                 String
+  planId                 String
+  status                 SubscriptionStatus @default(CREATED)
+  razorpaySubscriptionId String?            @unique
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean            @default(false)
+  cancelledAt            DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan         SubscriptionPlan    @relation(fields: [planId], references: [id], onDelete: Restrict)
+  accessGrants ReportAccessGrant[]
+
+  @@index([userId, status])
+}
+
+// Commission split for a paid consultation, recorded when the booking completes.
+model AstrologerEarning {
+  id                String       @id @default(cuid())
+  bookingId         String       @unique
+  astrologerId      String
+  grossMinor        Int
+  commissionRateBps Int
+  commissionMinor   Int
+  netMinor          Int
+  payoutStatus      PayoutStatus @default(PENDING)
+  paidOutAt         DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  booking    Booking    @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  astrologer Astrologer @relation(fields: [astrologerId], references: [id], onDelete: Restrict)
+
+  @@index([astrologerId, payoutStatus])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Platform
+// ─────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}
+
+model ContactMessage {
+  id            String        @id @default(cuid())
+  name          String
+  email         String
+  subject       String
+  message       String
+  status        ContactStatus @default(NEW)
+  response      String?
+  respondedById String?
+  respondedAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  respondedBy User? @relation(fields: [respondedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+}
+
+model NewsletterSubscription {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  confirmedAt    DateTime?
+  unsubscribedAt DateTime?
+  createdAt      DateTime  @default(now())
+}
+
+model AdminSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
+  @@index([createdAt])
+}

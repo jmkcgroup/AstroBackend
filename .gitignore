@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+src/generated/
+storage/
+.pgdata/
+coverage/
+*.log
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
