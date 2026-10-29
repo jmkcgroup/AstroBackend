@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # AstroVeda API (backend)
 
 Express 5 + TypeScript + Prisma 7, with a Swiss Ephemeris astrology engine.
@@ -91,3 +92,6 @@ private data · partial unique index preventing double booking · audit log for 
 - **Setup:** put Test Mode keys in `.env` (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`). In the Razorpay dashboard add a webhook to `https://<api-domain>/api/payments/webhook/razorpay` with a secret (`RAZORPAY_WEBHOOK_SECRET`) and events `payment.captured`, `payment.failed`, `order.paid`, `refund.processed`, `refund.failed`, `subscription.*`. Enable Subscriptions on the account before creating plans in Admin → Memberships.
 - Endpoints: `GET /payments/config`, `/payments/plans`, `/payments` (history), `POST /payments/orders`, `/payments/verify`, `GET/POST /payments/subscription`, `POST /payments/subscription/verify`, `/payments/subscription/cancel`; admin `GET /admin/payments`, `POST /admin/payments/:id/refund`, `/admin/earnings` (+ `/:id/payout`), `/admin/plans`, `/admin/subscriptions`, `/admin/settings`, `/admin/webhooks`.
 - Tests use an in-memory gateway (`tests/fake-gateway.ts`) with real signature verification; no network calls.
+=======
+# AstroBackend
+>>>>>>> df13eb02e3211606cbc7d97e996f38e946550335
