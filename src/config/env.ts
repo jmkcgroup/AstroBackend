@@ -27,6 +27,8 @@ const envSchema = z.object({
   SMTP_PASSWORD: optional,
   EMAIL_FROM: z.string().default("AstroVeda <no-reply@example.com>"),
   CONTACT_INBOX: optional,
+  SEED_ADMIN_EMAIL: optional,
+  SEED_ADMIN_PASSWORD: optional,
 
   SWISSEPH_EPHE_PATH: optional,
   RAZORPAY_KEY_ID: optional,
