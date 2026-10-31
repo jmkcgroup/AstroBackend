@@ -1,0 +1,17 @@
+node_modules
+dist
+src/generated
+storage
+coverage
+.pgdata
+.git
+.env
+.env.*
+!.env.example
+*.log
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+Dockerfile
+.dockerignore
