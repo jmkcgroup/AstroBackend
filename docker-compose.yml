@@ -1,21 +1,27 @@
+# Dokploy deployment (Compose service; Dokploy always runs ./docker-compose.yml).
+# Optional local PostgreSQL for development: docker compose -f docker-compose.local.yml up -d
+# The service is named "strapi" only because the Dokploy domain is attached to that name;
+# it runs this Express API from ./Dockerfile.
 services:
-  postgres:
-    image: postgres:17-alpine
-    container_name: astroveda-postgres
+  strapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: astroveda
-      POSTGRES_PASSWORD: astroveda_dev_password
-      POSTGRES_DB: astroveda
-    ports:
-      - "5432:5432"
+    # Dokploy writes the Environment tab to .env next to this file.
+    env_file:
+      - .env
+    expose:
+      - "4000"
     volumes:
-      - astroveda-pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U astroveda -d astroveda"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      - astro-storage:/app/storage
+    networks:
+      - dokploy-network
 
 volumes:
-  astroveda-pgdata:
+  astro-storage:
+
+networks:
+  # Shared Dokploy network: reaches the Postgres service (astro-astro-rsmvq6) and Traefik.
+  dokploy-network:
+    external: true

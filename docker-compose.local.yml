@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: astroveda-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: astroveda
+      POSTGRES_PASSWORD: astroveda_dev_password
+      POSTGRES_DB: astroveda
+    ports:
+      - "5432:5432"
+    volumes:
+      - astroveda-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U astroveda -d astroveda"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  astroveda-pgdata:
