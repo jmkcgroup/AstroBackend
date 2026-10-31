@@ -9,6 +9,8 @@
 generator client {
   provider = "prisma-client"
   output   = "../../src/generated/prisma"
+  // ".js" specifiers survive `tsc` unchanged, so dist/ runs on plain Node (tsx also resolves them in dev).
+  importFileExtension = "js"
 }
 
 datasource db {
