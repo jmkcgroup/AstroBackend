@@ -1,0 +1,26 @@
+# Dokploy deployment (Compose service). Local development uses docker-compose.yml instead.
+# The service is named "strapi" only because the Dokploy domain is attached to that name;
+# it runs this Express API from ./Dockerfile.
+services:
+  strapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # Dokploy writes the Environment tab to .env next to this file.
+    env_file:
+      - .env
+    expose:
+      - "4000"
+    volumes:
+      - astro-storage:/app/storage
+    networks:
+      - dokploy-network
+
+volumes:
+  astro-storage:
+
+networks:
+  # Shared Dokploy network: reaches the Postgres service (astro-astro-rsmvq6) and Traefik.
+  dokploy-network:
+    external: true
